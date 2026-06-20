@@ -2303,8 +2303,8 @@ _struct_types = tuple(
     + BaseBatchReq.__subclasses__()
     + [PickleWrapper]
 )
-# str primitive types should encode to bytes
-_primitive_types = (int, float, bool, bytes)
+# Primitive types that msgpack can serialize directly without PickleWrapper.
+_primitive_types = (int, float, bool, bytes, str)
 _all_types = _struct_types + _primitive_types
 
 _msgpack_encoder = msgspec.msgpack.Encoder(enc_hook=enc_hook)

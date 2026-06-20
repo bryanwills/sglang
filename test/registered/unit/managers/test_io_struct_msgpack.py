@@ -14,6 +14,7 @@ maybe_stub_sgl_kernel()
 from sglang.srt.managers.io_struct import (  # noqa: E402
     BaseReq,
     PickleWrapper,
+    _msgpack_decoder,
     dec_hook,
     enc_hook,
     hook_custom_types,
@@ -95,6 +96,13 @@ class TestIoStructMsgpack(CustomTestCase):
         self.assertEqual(rebuilt.int_array, int_array)
         self.assertEqual(rebuilt.np_scalar, 1.25)
         self.assertIsInstance(rebuilt.np_scalar, float)
+
+    def test_top_level_string_uses_native_msgpack(self):
+        encoded = msgpack_encode("node-0")
+        decoded_without_pickle_unwrap = _msgpack_decoder.decode(encoded)
+
+        self.assertEqual(decoded_without_pickle_unwrap, "node-0")
+        self.assertEqual(msgpack_decode(encoded), "node-0")
 
     def test_process_local_runtime_handles_are_dropped(self):
         if trace_module.opentelemetry_imported:

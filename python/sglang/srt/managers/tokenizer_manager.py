@@ -55,6 +55,7 @@ from sglang.srt.managers.embed_types import PositionalEmbeds
 from sglang.srt.managers.io_struct import (
     AbortReq,
     ActiveRanksOutput,
+    BaseReq,
     BatchEmbeddingOutput,
     BatchStrOutput,
     BatchTokenIDOutput,
@@ -392,7 +393,9 @@ class TokenizerManager(TokenizerControlMixin, TokenizerManagerScoreMixin):
                 context, zmq.PUSH, port_args.tokenizer_worker_ipc_name, False
             )
             # Make sure that each request carries the tokenizer_ipc_name for response routing
-            self.send_to_scheduler = SenderWrapper(port_args, send_to_scheduler)
+            self.send_to_scheduler = SenderWrapper(
+                port_args, send_to_scheduler, attach_multi_http_worker_info=True
+            )
 
         self.load_snapshot_reader = create_load_snapshot_reader(
             self.server_args,
@@ -3118,14 +3121,18 @@ class SenderWrapper:
         self,
         port_args: PortArgs,
         send_to_scheduler: zmq.Socket,
+        attach_multi_http_worker_info: bool = False,
     ):
         self.port_args = port_args
         self.send_to_scheduler = send_to_scheduler
+        self.attach_multi_http_worker_info = attach_multi_http_worker_info
 
     def send_obj(self, obj):
-        _attach_multi_http_worker_info(obj, self.port_args.tokenizer_ipc_name)
+        if self.attach_multi_http_worker_info and isinstance(obj, BaseReq):
+            obj.http_worker_ipc = self.port_args.tokenizer_ipc_name
         sock_send(self.send_to_scheduler, obj)
 
     async def async_send_obj(self, obj):
-        _attach_multi_http_worker_info(obj, self.port_args.tokenizer_ipc_name)
+        if self.attach_multi_http_worker_info and isinstance(obj, BaseReq):
+            obj.http_worker_ipc = self.port_args.tokenizer_ipc_name
         await async_sock_send(self.send_to_scheduler, obj)

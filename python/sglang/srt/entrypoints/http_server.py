@@ -975,7 +975,7 @@ async def attach_hicache_storage_backend(
         hicache_storage_prefetch_policy=obj.hicache_storage_prefetch_policy,
         hicache_write_policy=obj.hicache_write_policy,
     )
-    msg = getattr(ret, "message", "")
+    msg = ret.message
     return Response(
         content=(
             (
@@ -1002,7 +1002,7 @@ async def detach_hicache_storage_backend():
         return _admin_api_key_missing_response()
 
     ret = await _global_state.tokenizer_manager.detach_hicache_storage()
-    msg = getattr(ret, "message", "")
+    msg = ret.message
     return Response(
         content=(
             (
@@ -1595,7 +1595,7 @@ async def separate_reasoning_request(
     parser = ReasoningParser(model_type=obj.reasoning_parser, request=request)
 
     # 2) Call the non-stream parsing method (non-stream)
-    if getattr(obj, "return_blocks", False):
+    if obj.return_blocks:
         blocks = parser.parse_non_stream_blocks(obj.text)
         reasoning_blocks = [b["text"] for b in blocks if b["type"] == "reasoning"]
         text_blocks = [b["text"] for b in blocks if b["type"] == "text"]
@@ -1609,7 +1609,7 @@ async def separate_reasoning_request(
         "reasoning_text": reasoning_text,
         "text": normal_text,
     }
-    if getattr(obj, "return_blocks", False):
+    if obj.return_blocks:
         response_data["reasoning_blocks"] = reasoning_blocks
         response_data["text_blocks"] = text_blocks
         response_data["blocks"] = blocks
