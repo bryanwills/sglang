@@ -5,10 +5,6 @@ import copy
 from collections import deque
 from typing import Deque, Generic, List, Optional, TypeVar
 
-import zmq
-
-from sglang.srt.managers.io_struct import sock_send
-
 T = TypeVar("T")
 
 
@@ -24,7 +20,7 @@ class FanOutCommunicator(Generic[T]):
     Only one request is in-flight at any time in either mode.
     """
 
-    def __init__(self, sender: zmq.Socket, fan_out: int, mode="queueing"):
+    def __init__(self, sender, fan_out: int, mode="queueing"):
         self._sender = sender
         self._fan_out = fan_out
         self._mode = mode
@@ -43,11 +39,7 @@ class FanOutCommunicator(Generic[T]):
             assert self._result_values is None
 
         if obj is not None:
-            if isinstance(self._sender, zmq.Socket):
-                sock_send(self._sender, obj)
-            else:
-                # for no zmq.Socket, it will be SenderWrapper
-                self._sender.send_obj(obj)
+            self._sender.send_obj(obj)
 
         self._result_event = asyncio.Event()
         self._result_values = []
@@ -67,11 +59,7 @@ class FanOutCommunicator(Generic[T]):
             self._result_event = asyncio.Event()
 
             if obj is not None:
-                if isinstance(self._sender, zmq.Socket):
-                    sock_send(self._sender, obj)
-                else:
-                    # for no zmq.Socket, it will be SenderWrapper
-                    self._sender.send_obj(obj)
+                self._sender.send_obj(obj)
 
         # Capture local refs before await -- after event fires, the first
         # awakened coroutine clears shared state; later awaiters use local refs.
