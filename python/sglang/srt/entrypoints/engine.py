@@ -68,6 +68,8 @@ from sglang.srt.managers.io_struct import (
     LoadLoRAAdapterReqInput,
     MultimodalDataInputFormat,
     OpenSessionReqInput,
+    ProfileReq,
+    ProfileReqType,
     ReleaseMemoryOccupationReqInput,
     ResumeMemoryOccupationReqInput,
     RpcReqInput,
@@ -964,7 +966,8 @@ class Engine(EngineScoreMixin, EngineBase):
         self.loop.run_until_complete(self.tokenizer_manager.close_session(obj, None))
 
     def start_profile(self, **kwargs):
-        self.loop.run_until_complete(self.tokenizer_manager.start_profile(**kwargs))
+        req = ProfileReq(req_type=ProfileReqType.START_PROFILE, **kwargs)
+        self.loop.run_until_complete(self.tokenizer_manager.start_profile(req))
 
     def stop_profile(self):
         self.loop.run_until_complete(self.tokenizer_manager.stop_profile())

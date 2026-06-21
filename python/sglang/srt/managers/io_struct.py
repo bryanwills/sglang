@@ -1446,7 +1446,6 @@ class ListExternalCorporaReqOutput(BaseReq, kw_only=True):
     message: str = ""
 
 
-# see also AttachHiCacheStorageReqInput in the http_server.py
 class AttachHiCacheStorageReqInput(BaseReq, kw_only=True):
     """Dynamically attach (enable) HiCache storage backend at runtime.
 
@@ -1662,6 +1661,7 @@ class UpdateExpertBackupReq(BaseReq, kw_only=True):
 class BackupDramReq(BaseReq, kw_only=True):
     rank: int
     weight_pointer_map: PickleWrapper
+    # Underlying type: Dict[str, Dict[str, object]].
     session_id: str
     buffer_size: int
 
@@ -1789,21 +1789,7 @@ class ProfileReqType(Enum):
 
 
 class ProfileReq(BaseReq, kw_only=True):
-    req_type: ProfileReqType
-    output_dir: Optional[str] = None
-    start_step: Optional[int] = None
-    num_steps: Optional[int] = None
-    activities: Optional[List[str]] = None
-    profile_by_stage: bool = False
-    with_stack: Optional[bool] = None
-    record_shapes: Optional[bool] = None
-    profile_id: Optional[str] = None
-    merge_profiles: bool = False
-    profile_prefix: Optional[str] = None
-    profile_stages: Optional[List[str]] = None
-
-
-class ProfileReqInput(BaseReq, kw_only=True):
+    req_type: ProfileReqType = ProfileReqType.START_PROFILE
     # The output directory
     output_dir: Optional[str] = None
     # Specify the steps to start the profiling
@@ -1820,6 +1806,7 @@ class ProfileReqInput(BaseReq, kw_only=True):
     with_stack: Optional[bool] = None
     # Whether to save information about operator’s input shapes.
     record_shapes: Optional[bool] = None
+    profile_id: Optional[str] = None
     # Merge profiles from all ranks into a single trace
     merge_profiles: bool = False
     # The prefix of the profile filenames

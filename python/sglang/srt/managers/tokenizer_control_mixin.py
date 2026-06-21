@@ -320,38 +320,20 @@ class TokenizerControlMixin:
 
     async def start_profile(
         self: TokenizerManager,
-        output_dir: Optional[str] = None,
-        start_step: Optional[int] = None,
-        num_steps: Optional[int] = None,
-        activities: Optional[List[str]] = None,
-        with_stack: Optional[bool] = None,
-        record_shapes: Optional[bool] = None,
-        profile_by_stage: bool = False,
-        merge_profiles: bool = False,
-        profile_prefix: Optional[str] = None,
-        profile_stages: Optional[List[str]] = None,
+        req: Optional[ProfileReq] = None,
     ):
         self.auto_create_handle_loop()
+        req = req or ProfileReq()
+        req.req_type = ProfileReqType.START_PROFILE
         env_with_stack: bool = get_bool_env_var("SGLANG_PROFILE_WITH_STACK", "true")
-        with_stack = False if with_stack is False or env_with_stack is False else True
+        req.with_stack = (
+            False if req.with_stack is False or env_with_stack is False else True
+        )
         env_record_shapes: bool = get_bool_env_var(
             "SGLANG_PROFILE_RECORD_SHAPES", "true"
         )
-        record_shapes = (record_shapes is not False) and env_record_shapes
-        req = ProfileReq(
-            req_type=ProfileReqType.START_PROFILE,
-            output_dir=output_dir,
-            start_step=start_step,
-            num_steps=num_steps,
-            activities=activities,
-            with_stack=with_stack,
-            record_shapes=record_shapes,
-            profile_by_stage=profile_by_stage,
-            profile_id=str(time.time()),
-            merge_profiles=merge_profiles,
-            profile_prefix=profile_prefix,
-            profile_stages=profile_stages,
-        )
+        req.record_shapes = (req.record_shapes is not False) and env_record_shapes
+        req.profile_id = req.profile_id or str(time.time())
         return await self._execute_profile(req)
 
     async def stop_profile(self: TokenizerManager):
