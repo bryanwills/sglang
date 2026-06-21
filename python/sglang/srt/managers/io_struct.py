@@ -2206,13 +2206,17 @@ def wrap_as_pickle(obj: object) -> PickleWrapper:
     return PickleWrapper(pickle.dumps(obj))
 
 
-def unwrap_from_pickle(obj: PickleWrapper) -> object:
+def unwrap_from_pickle(obj: Optional[PickleWrapper]) -> Optional[object]:
+    if obj is None:
+        return None
     assert isinstance(obj, PickleWrapper)
     return pickle.loads(obj.data)
 
 
 def enc_hook(obj: Any) -> Any:
-    if isinstance(obj, torch.Tensor):
+    if isinstance(obj, array):
+        return (obj.typecode, obj.tobytes())
+    elif isinstance(obj, torch.Tensor):
         # encode torch tensor as Tuple(shape, dtype, data)
         tensor_dtype = str(obj.dtype).removeprefix("torch.")  # e.g., "float32"
         raw_data = (
@@ -2222,8 +2226,6 @@ def enc_hook(obj: Any) -> Any:
     elif isinstance(obj, np.ndarray):
         raw_data = np.ascontiguousarray(obj).reshape(-1).view(np.uint8).data
         return (obj.shape, obj.dtype.str, raw_data)
-    elif isinstance(obj, array):
-        return (obj.typecode, obj.tobytes())
     elif isinstance(obj, np.floating):
         return float(obj)
     else:
@@ -2234,8 +2236,14 @@ def enc_hook(obj: Any) -> Any:
             "for this transport type."
         )
 
+
 def dec_hook(tp: Type, obj: Any) -> Any:
-    if tp is torch.Tensor:
+    if tp is array:
+        typecode, raw_data = obj
+        res = array(typecode)
+        res.frombytes(raw_data)
+        return res
+    elif tp is torch.Tensor:
         shape, dtype, data = obj
         tensor_dtype = getattr(torch, dtype)
         if len(data) == 0:
@@ -2244,11 +2252,6 @@ def dec_hook(tp: Type, obj: Any) -> Any:
     elif tp is np.ndarray:
         shape, dtype, data = obj
         return np.frombuffer(data, dtype=np.dtype(dtype)).copy().reshape(shape)
-    elif tp is array:
-        typecode, raw_data = obj
-        res = array(typecode)
-        res.frombytes(raw_data)
-        return res
     else:
         raise TypeError(
             f"Cannot msgpack decode object of type {type(obj)} as {tp} with "
@@ -2298,7 +2301,7 @@ def hook_custom_types(*new_types: Type):
 
 
 def _maybe_wrap_pickle(obj: Any) -> PickleWrapper:
-    if type(obj) in _pickle_transport_types:
+    if isinstance(obj, _pickle_transport_types):
         if envs.SGLANG_LOG_PICKLE_IPC_OBJECTS.get():
             logger.info(f"Object of type {type(obj)} is wrapped via PickleWrapper.")
         return PickleWrapper(pickle.dumps(obj))

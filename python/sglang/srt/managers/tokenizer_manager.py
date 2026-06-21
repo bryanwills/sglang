@@ -1329,6 +1329,7 @@ class TokenizerManager(TokenizerControlMixin, TokenizerManagerScoreMixin):
         time_stats = tokenized_obj.time_stats
         wrap_pickle_wrapper(tokenized_obj)
         self.send_to_scheduler.send_obj(tokenized_obj)
+        # Restore the runtime object; only the wire field should be PickleWrapper.
         tokenized_obj.time_stats = time_stats
         tokenized_obj.time_stats.set_api_server_dispatch_finish_time()
 
@@ -1351,6 +1352,7 @@ class TokenizerManager(TokenizerControlMixin, TokenizerManagerScoreMixin):
 
         self.send_to_scheduler.send_obj(batch_req)
         for tokenized_obj, time_stat in zip(tokenized_objs, time_stats):
+            # Restore the runtime object; only the wire field should be PickleWrapper.
             tokenized_obj.time_stats = time_stat
         set_time_batch(tokenized_objs, "set_api_server_dispatch_finish_time")
 
@@ -1857,8 +1859,7 @@ class TokenizerManager(TokenizerControlMixin, TokenizerManagerScoreMixin):
             BatchTokenIDOutput,
         ],
     ):
-        if recv_obj.time_stats is not None:
-            recv_obj.time_stats = unwrap_from_pickle(recv_obj.time_stats)
+        recv_obj.time_stats = unwrap_from_pickle(recv_obj.time_stats)
         pending_notify: dict[str, ReqState] = {}
         batch_notify_size = self.server_args.batch_notify_size
         for i, rid in enumerate(recv_obj.rids):
@@ -1914,11 +1915,7 @@ class TokenizerManager(TokenizerControlMixin, TokenizerManagerScoreMixin):
                     meta_info["cached_tokens_details"] = recv_obj.cached_tokens_details[
                         i
                     ]
-                customized_info = (
-                    unwrap_from_pickle(recv_obj.customized_info)
-                    if recv_obj.customized_info is not None
-                    else None
-                )
+                customized_info = unwrap_from_pickle(recv_obj.customized_info)
                 if customized_info is not None:
                     for k, v in customized_info.items():
                         if k not in state.customized_info_accumulated:

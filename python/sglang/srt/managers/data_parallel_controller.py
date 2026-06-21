@@ -240,18 +240,17 @@ class DataParallelController:
         if refresh_load_budget and self.refresh_load_budget_on_dispatch:
             self.refresh_load_budget()
 
-        req.time_stats = unwrap_from_pickle(req.time_stats)
-        req.time_stats = DPControllerReqTimeStats.new_from_obj(req.time_stats)
+        time_stats = DPControllerReqTimeStats.new_from_obj(
+            unwrap_from_pickle(req.time_stats)
+        )
 
-        req.time_stats.set_dp_dispatch_time()
+        time_stats.set_dp_dispatch_time()
         # ReqTimeStats still uses PickleWrapper on this IPC edge in this PR.
-        # Wrap only for scheduler dispatch, then restore the runtime object so
-        # the DP controller can record dispatch_finish_time. Drop this once
-        # ReqTimeStats is carried by the native msgspec protocol.
-        req.time_stats = wrap_as_pickle(req.time_stats)
+        # Temporarily replace the wire field, then restore the runtime object.
+        # Drop this once ReqTimeStats is carried by the native msgspec protocol.
+        req.time_stats = wrap_as_pickle(time_stats)
         self.dispatching(req)
-        req.time_stats = unwrap_from_pickle(req.time_stats)
-        req.time_stats.set_dp_dispatch_finish_time()
+        req.time_stats = time_stats
 
     def dispatch_batch_generate(self, batch_req: BatchTokenizedGenerateReqInput):
         if self.refresh_load_budget_on_dispatch:

@@ -86,9 +86,9 @@ class SamplingParams(msgspec.Struct, kw_only=True):
     presence_penalty: float = 0.0
     repetition_penalty: float = 1.0
     min_new_tokens: int = 0
-    regex: Optional[str] = None
     n: int = 1
     json_schema: Optional[str] = None
+    regex: Optional[str] = None
     ebnf: Optional[str] = None
     structural_tag: Optional[str] = None
     ignore_eos: bool = False
@@ -110,13 +110,12 @@ class SamplingParams(msgspec.Struct, kw_only=True):
         if self.is_normalized:
             return
 
+        self.stop_strs = self.stop
         if self.stop_token_ids:
             filtered = {int(t) for t in self.stop_token_ids if t is not None}
             self.stop_token_ids = filtered or None
         else:
             self.stop_token_ids = None
-
-        self.stop_strs = self.stop
         self.stop_regex_strs = self.stop_regex
 
         self.temperature = self.temperature if self.temperature is not None else 1.0
