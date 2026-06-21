@@ -329,7 +329,7 @@ class ReqTimeStatsBase:
         trace_ctx_state = state.get("trace_ctx")
         if isinstance(trace_ctx_state, dict):
             if trace_ctx_state.get("tracing_enable"):
-                trace_ctx = TraceReqContext(rid=trace_ctx_state.get("rid", ""))
+                trace_ctx = object.__new__(TraceReqContext)
                 trace_ctx.__setstate__(trace_ctx_state)
                 state["trace_ctx"] = trace_ctx
             else:

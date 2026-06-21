@@ -1326,9 +1326,10 @@ class TokenizerManager(TokenizerControlMixin, TokenizerManagerScoreMixin):
     ):
         tokenized_obj.time_stats.set_api_server_dispatch_time()
         tokenized_obj = wrap_shm_features(tokenized_obj)
+        time_stats = tokenized_obj.time_stats
         wrap_pickle_wrapper(tokenized_obj)
         self.send_to_scheduler.send_obj(tokenized_obj)
-        tokenized_obj.time_stats = unwrap_from_pickle(tokenized_obj.time_stats)
+        tokenized_obj.time_stats = time_stats
         tokenized_obj.time_stats.set_api_server_dispatch_finish_time()
 
     def _send_batch_request(
@@ -1339,6 +1340,7 @@ class TokenizerManager(TokenizerControlMixin, TokenizerManagerScoreMixin):
     ):
         """Send a batch of tokenized requests as a single batched request to the scheduler."""
         set_time_batch(tokenized_objs, "set_api_server_dispatch_time")
+        time_stats = [tokenized_obj.time_stats for tokenized_obj in tokenized_objs]
         for tokenized_obj in tokenized_objs:
             wrap_pickle_wrapper(tokenized_obj)
 
@@ -1348,8 +1350,8 @@ class TokenizerManager(TokenizerControlMixin, TokenizerManagerScoreMixin):
             batch_req = BatchTokenizedEmbeddingReqInput(batch=tokenized_objs)
 
         self.send_to_scheduler.send_obj(batch_req)
-        for tokenized_obj in tokenized_objs:
-            tokenized_obj.time_stats = unwrap_from_pickle(tokenized_obj.time_stats)
+        for tokenized_obj, time_stat in zip(tokenized_objs, time_stats):
+            tokenized_obj.time_stats = time_stat
         set_time_batch(tokenized_objs, "set_api_server_dispatch_finish_time")
 
     def _coalesce_streaming_chunks(
@@ -1855,7 +1857,8 @@ class TokenizerManager(TokenizerControlMixin, TokenizerManagerScoreMixin):
             BatchTokenIDOutput,
         ],
     ):
-        recv_obj.time_stats = unwrap_from_pickle(recv_obj.time_stats)
+        if recv_obj.time_stats is not None:
+            recv_obj.time_stats = unwrap_from_pickle(recv_obj.time_stats)
         pending_notify: dict[str, ReqState] = {}
         batch_notify_size = self.server_args.batch_notify_size
         for i, rid in enumerate(recv_obj.rids):
@@ -1911,7 +1914,11 @@ class TokenizerManager(TokenizerControlMixin, TokenizerManagerScoreMixin):
                     meta_info["cached_tokens_details"] = recv_obj.cached_tokens_details[
                         i
                     ]
-                customized_info = unwrap_from_pickle(recv_obj.customized_info)
+                customized_info = (
+                    unwrap_from_pickle(recv_obj.customized_info)
+                    if recv_obj.customized_info is not None
+                    else None
+                )
                 if customized_info is not None:
                     for k, v in customized_info.items():
                         if k not in state.customized_info_accumulated:
@@ -3130,8 +3137,10 @@ def wrap_pickle_wrapper(
     if isinstance(
         tokenized_obj, (TokenizedGenerateReqInput, TokenizedEmbeddingReqInput)
     ):
-        tokenized_obj.mm_inputs = wrap_as_pickle(tokenized_obj.mm_inputs)
-        tokenized_obj.time_stats = wrap_as_pickle(tokenized_obj.time_stats)
+        if tokenized_obj.mm_inputs is not None:
+            tokenized_obj.mm_inputs = wrap_as_pickle(tokenized_obj.mm_inputs)
+        if tokenized_obj.time_stats is not None:
+            tokenized_obj.time_stats = wrap_as_pickle(tokenized_obj.time_stats)
     else:
         raise ValueError(f"Unknown tokenized obj type: {type(tokenized_obj)}")
 

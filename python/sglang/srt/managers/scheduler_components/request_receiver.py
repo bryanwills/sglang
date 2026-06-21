@@ -204,14 +204,18 @@ class SchedulerRequestReceiver:
 
         for req in recv_reqs:
             if isinstance(req, (TokenizedGenerateReqInput, TokenizedEmbeddingReqInput)):
-                req.mm_inputs = unwrap_from_pickle(req.mm_inputs)
-                req.time_stats = unwrap_from_pickle(req.time_stats)
+                if req.mm_inputs is not None:
+                    req.mm_inputs = unwrap_from_pickle(req.mm_inputs)
+                if req.time_stats is not None:
+                    req.time_stats = unwrap_from_pickle(req.time_stats)
             elif isinstance(
                 req, (BatchTokenizedGenerateReqInput, BatchTokenizedEmbeddingReqInput)
             ):
                 for sub_req in req:
-                    sub_req.mm_inputs = unwrap_from_pickle(sub_req.mm_inputs)
-                    sub_req.time_stats = unwrap_from_pickle(sub_req.time_stats)
+                    if sub_req.mm_inputs is not None:
+                        sub_req.mm_inputs = unwrap_from_pickle(sub_req.mm_inputs)
+                    if sub_req.time_stats is not None:
+                        sub_req.time_stats = unwrap_from_pickle(sub_req.time_stats)
 
     def _apply_mm_receiver(self, recv_reqs: List) -> List:
         # Process MM requests under EPD-disaggregation mode

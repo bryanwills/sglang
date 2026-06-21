@@ -41,11 +41,6 @@ from sglang.srt.lora.lora_registry import LoRARef
 from sglang.srt.managers.embed_types import PositionalEmbeds
 from sglang.srt.managers.schedule_batch import Modality
 from sglang.srt.multimodal.mm_utils import has_valid_data
-from sglang.srt.observability.trace import (
-    TraceContext,
-    TraceSpan,
-    TraceSpanContext,
-)
 from sglang.srt.sampling.sampling_params import SamplingParams
 from sglang.srt.utils import ImageData, VideoData
 from sglang.srt.utils.field_validators import validate_optional_list_i64_1d_2d
@@ -112,6 +107,13 @@ def _msgspec_struct_pydantic_core_schema(cls: type[msgspec.Struct], handler):
 
 # The BaseReq IPC class for IPC object
 class BaseReq(msgspec.Struct, tag=True, kw_only=True, array_like=True):
+    """Base for single-request IPC payloads.
+
+    rid: Request id for a single request.
+    http_worker_ipc: Tokenizer/http worker IPC endpoint used to route outputs
+        back to the worker that owns the request.
+    """
+
     rid: Optional[str] = None
     http_worker_ipc: Optional[str] = None
 
@@ -122,6 +124,12 @@ class BaseReq(msgspec.Struct, tag=True, kw_only=True, array_like=True):
 
 # The BaseBatchReq IPC class for IPC object
 class BaseBatchReq(msgspec.Struct, tag=True, kw_only=True, array_like=True):
+    """Base for batched IPC payloads.
+
+    rids: Request ids for the batched requests.
+    http_worker_ipcs: Tokenizer/http worker IPC endpoints aligned with rids.
+    """
+
     rids: Optional[List[str]] = None
     http_worker_ipcs: Optional[List[Optional[str]]] = None
 
@@ -1760,12 +1768,7 @@ class GetInternalStateReq(BaseReq, kw_only=True):
 
 
 class GetInternalStateReqOutput(BaseReq, kw_only=True):
-    server_args: Dict[str, Any]
-    last_gen_throughput: float
-    memory_usage: Dict[str, Union[float, int]]
-    effective_max_running_requests_per_dp: int
-    avg_spec_accept_length: Optional[float] = None
-    step_time_dict: Optional[Dict[str, float]] = None
+    internal_state: Dict[Any, Any]
 
 
 class SetInternalStateReq(BaseReq, kw_only=True):
@@ -2198,16 +2201,14 @@ def _check_all_req_types():
 _check_all_req_types()
 
 
-def wrap_as_pickle(obj: Any) -> Optional[PickleWrapper]:
-    if obj is None or isinstance(obj, PickleWrapper):
-        return obj
+def wrap_as_pickle(obj: object) -> PickleWrapper:
+    assert not isinstance(obj, PickleWrapper)
     return PickleWrapper(pickle.dumps(obj))
 
 
-def unwrap_from_pickle(obj: Any) -> Any:
-    if isinstance(obj, PickleWrapper):
-        return pickle.loads(obj.data)
-    return obj
+def unwrap_from_pickle(obj: PickleWrapper) -> object:
+    assert isinstance(obj, PickleWrapper)
+    return pickle.loads(obj.data)
 
 
 def enc_hook(obj: Any) -> Any:
@@ -2225,10 +2226,6 @@ def enc_hook(obj: Any) -> Any:
         return (obj.typecode, obj.tobytes())
     elif isinstance(obj, np.floating):
         return float(obj)
-    elif isinstance(obj, TraceSpan):
-        # Live OpenTelemetry spans are process-local handles. Trace propagation
-        # uses serializable span contexts instead.
-        return None
     else:
         raise TypeError(
             f"Cannot msgpack encode object of type {type(obj)} with enc_hook. "
@@ -2236,23 +2233,6 @@ def enc_hook(obj: Any) -> Any:
             "arbitrary payloads, or add a dedicated enc_hook/dec_hook branch "
             "for this transport type."
         )
-
-
-def _maybe_load_pickled_value(obj: Any) -> Any:
-    if isinstance(obj, memoryview):
-        obj = obj.tobytes()
-    elif isinstance(obj, bytearray):
-        obj = bytes(obj)
-
-    if (
-        isinstance(obj, bytes)
-        and len(obj) >= 2
-        and obj[0] == 0x80
-        and obj[1] <= pickle.HIGHEST_PROTOCOL
-    ):
-        return pickle.loads(obj)
-    return obj
-
 
 def dec_hook(tp: Type, obj: Any) -> Any:
     if tp is torch.Tensor:
@@ -2269,19 +2249,6 @@ def dec_hook(tp: Type, obj: Any) -> Any:
         res = array(typecode)
         res.frombytes(raw_data)
         return res
-    elif tp is TraceContext:
-        # The TraceContext is represented as a dict after encoding,
-        # we need to decode it back to TraceContext
-        if isinstance(obj, dict):
-            obj = {k: _maybe_load_pickled_value(v) for k, v in obj.items()}
-        return TraceContext(obj)
-    elif tp is TraceSpanContext:
-        # The TraceSpanContext is represented as a tuple after encoding,
-        # we need to decode it back to TraceSpanContext
-        trace_id, span_id, is_remote, trace_flags, trace_state, _ = obj
-        trace_flags = _maybe_load_pickled_value(trace_flags)
-        trace_state = _maybe_load_pickled_value(trace_state)
-        return TraceSpanContext(trace_id, span_id, is_remote, trace_flags, trace_state)
     else:
         raise TypeError(
             f"Cannot msgpack decode object of type {type(obj)} as {tp} with "

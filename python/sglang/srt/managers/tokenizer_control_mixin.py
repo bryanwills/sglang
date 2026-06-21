@@ -10,7 +10,6 @@ import uuid
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 
 import fastapi
-import msgspec
 import pybase64
 
 from sglang.srt.managers.communicator import FanOutCommunicator
@@ -799,14 +798,8 @@ class TokenizerControlMixin:
         responses: List[GetInternalStateReqOutput] = (
             await self.get_internal_state_communicator(req)
         )
-        results = []
-        for response in responses:
-            res = msgspec.structs.asdict(response)
-            server_args = res.pop("server_args", None) or {}
-            res = {k: v for k, v in res.items() if v is not None}
-            results.append(server_args | res)
         # Many DP ranks
-        return results
+        return [res.internal_state for res in responses]
 
     async def set_internal_state(
         self: TokenizerManager, obj: SetInternalStateReq

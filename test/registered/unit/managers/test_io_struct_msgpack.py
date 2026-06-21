@@ -1,7 +1,7 @@
 import unittest
 import warnings
 from array import array
-from typing import Any, Optional
+from typing import Any
 
 import numpy as np
 import torch
@@ -28,7 +28,6 @@ from sglang.srt.observability import trace as trace_module  # noqa: E402
 from sglang.srt.observability.req_time_stats import (  # noqa: E402
     APIServerReqTimeStats,
 )
-from sglang.srt.observability.trace import TraceSpan  # noqa: E402
 from sglang.srt.sampling.sampling_params import SamplingParams  # noqa: E402
 
 register_cpu_ci(est_time=5, suite="base-a-test-cpu")
@@ -42,15 +41,11 @@ class MsgpackPayload(BaseReq, kw_only=True):
     np_scalar: Any
 
 
-class RuntimeHandlePayload(BaseReq, kw_only=True):
-    span: Optional[TraceSpan] = None
-
-
 class UnsupportedNestedPayload(BaseReq, kw_only=True):
     value: Any
 
 
-hook_custom_types(MsgpackPayload, RuntimeHandlePayload, UnsupportedNestedPayload)
+hook_custom_types(MsgpackPayload, UnsupportedNestedPayload)
 
 
 class TestIoStructMsgpack(CustomTestCase):
@@ -122,20 +117,6 @@ class TestIoStructMsgpack(CustomTestCase):
         rebuilt = msgpack_decode(encoded)
         self.assertIsInstance(rebuilt, SamplingParams)
         self.assertEqual(rebuilt.stop_token_ids, {1, 2})
-
-    def test_process_local_trace_spans_are_dropped(self):
-        if trace_module.opentelemetry_imported:
-            span = trace_module.trace.NonRecordingSpan(
-                trace_module.trace.INVALID_SPAN_CONTEXT
-            )
-        else:
-            span = TraceSpan()
-
-        payload = RuntimeHandlePayload(span=span)
-
-        rebuilt = msgpack_decode(msgpack_encode(payload))
-
-        self.assertIsNone(rebuilt.span)
 
     def test_unsupported_nested_object_fails_fast(self):
         payload = UnsupportedNestedPayload(value=object())

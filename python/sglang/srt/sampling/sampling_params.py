@@ -105,16 +105,16 @@ class SamplingParams(msgspec.Struct, kw_only=True):
         # For non-optional params, treat None as "use default" so that callers
         # (e.g. /generate) can pass null without crashing verify().
 
+        # Since the __post_init__ is called after msgpack deserialization,
+        # we try to avoid init again to reset the values.
+        if self.is_normalized:
+            return
+
         if self.stop_token_ids:
             filtered = {int(t) for t in self.stop_token_ids if t is not None}
             self.stop_token_ids = filtered or None
         else:
             self.stop_token_ids = None
-
-        # Since the __post_init__ is called after msgpack deserialization,
-        # we try to avoid init again to reset the values.
-        if self.is_normalized:
-            return
 
         self.stop_strs = self.stop
         self.stop_regex_strs = self.stop_regex
