@@ -230,7 +230,7 @@ class SchedulerOutputStreamer:
             BatchEmbeddingOutput(
                 rids=rids,
                 http_worker_ipcs=http_worker_ipcs,
-                time_stats=time_stats,
+                time_stats=wrap_as_pickle(time_stats),
                 finished_reasons=finished_reasons,
                 embeddings=embeddings,
                 prompt_tokens=prompt_tokens,
@@ -518,7 +518,7 @@ class _GenerationStreamAccumulator:
             spec_verify_ct=self.spec_verify_ct,
             spec_num_correct_drafts=self.spec_num_correct_drafts,
             spec_correct_drafts_histogram=self.spec_correct_drafts_histogram,
-            time_stats=self.time_stats,
+            time_stats=wrap_as_pickle(self.time_stats),
             finished_reasons=self.finished_reasons,
             decoded_texts=self.decoded_texts,
             decode_ids=self.decode_ids_list,

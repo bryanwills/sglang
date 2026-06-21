@@ -14,6 +14,7 @@ maybe_stub_sgl_kernel()
 from sglang.srt.managers.io_struct import (  # noqa: E402
     BaseReq,
     PickleWrapper,
+    TokenizedGenerateReqInput,
     _msgpack_decoder,
     dec_hook,
     enc_hook,
@@ -25,7 +26,7 @@ from sglang.srt.managers.io_struct import (  # noqa: E402
 )
 from sglang.srt.observability import trace as trace_module  # noqa: E402
 from sglang.srt.observability.req_time_stats import (  # noqa: E402
-    MetricsCollectorWrapper,
+    APIServerReqTimeStats,
 )
 from sglang.srt.observability.trace import TraceSpan  # noqa: E402
 from sglang.srt.sampling.sampling_params import SamplingParams  # noqa: E402
@@ -42,7 +43,6 @@ class MsgpackPayload(BaseReq, kw_only=True):
 
 
 class RuntimeHandlePayload(BaseReq, kw_only=True):
-    metrics_collector: Optional[MetricsCollectorWrapper] = None
     span: Optional[TraceSpan] = None
 
 
@@ -123,7 +123,7 @@ class TestIoStructMsgpack(CustomTestCase):
         self.assertIsInstance(rebuilt, SamplingParams)
         self.assertEqual(rebuilt.stop_token_ids, {1, 2})
 
-    def test_process_local_runtime_handles_are_dropped(self):
+    def test_process_local_trace_spans_are_dropped(self):
         if trace_module.opentelemetry_imported:
             span = trace_module.trace.NonRecordingSpan(
                 trace_module.trace.INVALID_SPAN_CONTEXT
@@ -131,14 +131,10 @@ class TestIoStructMsgpack(CustomTestCase):
         else:
             span = TraceSpan()
 
-        payload = RuntimeHandlePayload(
-            metrics_collector=MetricsCollectorWrapper(object()),
-            span=span,
-        )
+        payload = RuntimeHandlePayload(span=span)
 
         rebuilt = msgpack_decode(msgpack_encode(payload))
 
-        self.assertIsNone(rebuilt.metrics_collector)
         self.assertIsNone(rebuilt.span)
 
     def test_unsupported_nested_object_fails_fast(self):
@@ -158,6 +154,77 @@ class TestIoStructMsgpack(CustomTestCase):
         rebuilt = msgpack_decode(msgpack_encode(wrapped))
         self.assertEqual(rebuilt, value)
         self.assertEqual(unwrap_from_pickle(wrapped), value)
+
+    def test_time_stats_ipc_uses_pickle_wrapper_for_trace_context(self):
+        if not trace_module.opentelemetry_imported:
+            self.skipTest("opentelemetry is not installed")
+
+        prev_initialized = trace_module.opentelemetry_initialized
+        prev_trace_level = trace_module.global_trace_level
+        try:
+            trace_module.opentelemetry_initialized = True
+            trace_module.set_global_trace_level(1)
+
+            trace_id = 0x123456789ABCDEF123456789ABCDEF12
+            span_id = 0x123456789ABCDEF1
+            span_context = trace_module.trace.SpanContext(
+                trace_id=trace_id,
+                span_id=span_id,
+                is_remote=False,
+                trace_flags=trace_module.trace.TraceFlags(
+                    trace_module.trace.TraceFlags.SAMPLED
+                ),
+            )
+            root_span_context = trace_module.trace.set_span_in_context(
+                trace_module.trace.NonRecordingSpan(span_context)
+            )
+
+            time_stats = APIServerReqTimeStats()
+            time_stats.init_trace_ctx("rid-trace", bootstrap_room=None)
+            time_stats.trace_ctx.root_span_context = root_span_context
+
+            req = TokenizedGenerateReqInput(
+                rid="rid-trace",
+                input_text="hello",
+                input_ids=array("l", [1, 2, 3]),
+                mm_inputs=None,
+                sampling_params=SamplingParams(max_new_tokens=4),
+                return_logprob=False,
+                logprob_start_len=0,
+                top_logprobs_num=0,
+                token_ids_logprob=None,
+                stream=False,
+                time_stats=wrap_as_pickle(time_stats),
+            )
+
+            encoded = msgpack_encode(req)
+            raw = _msgpack_decoder.decode(encoded)
+            self.assertIsInstance(raw.time_stats, PickleWrapper)
+
+            rebuilt = msgpack_decode(encoded)
+            self.assertIsInstance(rebuilt.time_stats, PickleWrapper)
+            rebuilt_time_stats = unwrap_from_pickle(rebuilt.time_stats)
+            self.assertIsInstance(rebuilt_time_stats, APIServerReqTimeStats)
+            self.assertTrue(rebuilt_time_stats.trace_ctx.tracing_enable)
+            self.assertTrue(rebuilt_time_stats.trace_ctx.is_copy)
+            self.assertIsNone(rebuilt_time_stats.trace_ctx.root_span)
+
+            carrier = {}
+            trace_module.propagate.inject(
+                carrier, rebuilt_time_stats.trace_ctx.root_span_context
+            )
+            self.assertEqual(
+                carrier,
+                {
+                    "traceparent": (
+                        f"00-{trace_id:032x}-{span_id:016x}-"
+                        f"{trace_module.trace.TraceFlags.SAMPLED:02x}"
+                    )
+                },
+            )
+        finally:
+            trace_module.opentelemetry_initialized = prev_initialized
+            trace_module.set_global_trace_level(prev_trace_level)
 
 
 if __name__ == "__main__":

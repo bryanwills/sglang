@@ -18,10 +18,9 @@ from __future__ import annotations
 import logging
 import time
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
 
-import msgspec
 from typing_extensions import Self
 
 from sglang.srt.disaggregation.utils import DisaggregationMode
@@ -221,38 +220,17 @@ class RequestStage:
     ANONYMOUS = RequestStageConfig("")
 
 
-# The metrics collector is not serializable,
-# and it is only used for observing metrics in the current process.
-class MetricsCollectorWrapper:  # the non-serializable wrapper
-    __slots__ = ("inner",)
-
-    def __init__(self, inner=None):
-        self.inner = inner
-
-    def __getattr__(self, name):  # delegate to internal object
-        if name.startswith("__") and name.endswith("__"):
-            raise AttributeError(name)
-        return getattr(self.inner, name)
-
-
-class ReqTimeStatsBase(msgspec.Struct, kw_only=True, tag=True):
+@dataclass
+class ReqTimeStatsBase:
     enable_metrics: bool = False
-    trace_ctx: Union[TraceReqContext, TraceNullContext] = msgspec.field(
+    metrics_collector: Optional[
+        Union[SchedulerMetricsCollector, TokenizerMetricsCollector]
+    ] = None
+    trace_ctx: Union[TraceReqContext, TraceNullContext] = field(
         default_factory=TraceNullContext
     )
-    metrics_collector: Optional[MetricsCollectorWrapper] = None
-    disagg_mode: Optional[DisaggregationMode] = DisaggregationMode.NULL
+    disagg_mode: DisaggregationMode = DisaggregationMode.NULL
     diff_realtime_monotonic: float = 0.0
-    is_initialized: bool = False
-
-    def __post_init__(self):
-        if self.is_initialized:
-            return
-
-        if not isinstance(self.metrics_collector, MetricsCollectorWrapper):
-            self.metrics_collector = MetricsCollectorWrapper(self.metrics_collector)
-
-        self.is_initialized = True
 
     @classmethod
     def new_from_obj(cls, obj: Optional[ReqTimeStatsBase], *args, **kwargs) -> Self:
@@ -260,11 +238,9 @@ class ReqTimeStatsBase(msgspec.Struct, kw_only=True, tag=True):
         new_obj = cls(*args, **kwargs)
         if obj is None:
             return new_obj
-        new_fields = {field.name for field in msgspec.structs.fields(type(new_obj))}
-        for field in msgspec.structs.fields(type(obj)):
-            key = field.name
-            if key in new_fields:
-                setattr(new_obj, key, getattr(obj, key))
+        for key, value in obj.__dict__.items():
+            if hasattr(new_obj, key):
+                setattr(new_obj, key, value)
 
         if new_obj.trace_ctx.tracing_enable:
             new_obj.trace_ctx.rebuild_thread_context()
@@ -286,7 +262,7 @@ class ReqTimeStatsBase(msgspec.Struct, kw_only=True, tag=True):
     ):
         if collector:
             self.enable_metrics = True
-            self.metrics_collector = MetricsCollectorWrapper(collector)
+            self.metrics_collector = collector
 
     def observe_per_stage_req_latency(self, stage: RequestStageConfig, latency: float):
         if self.enable_metrics and stage.metrics_is_observed:
@@ -359,17 +335,14 @@ class ReqTimeStatsBase(msgspec.Struct, kw_only=True, tag=True):
             else:
                 state["trace_ctx"] = TraceNullContext()
 
-        source_diff_realtime_monotonic = state["diff_realtime_monotonic"]
-        for key, value in list(state.items()):
+        for key in state.keys():
             if key.endswith("time"):
                 state[key] = convert_time_cross_thread(
-                    value,
-                    source_diff_realtime_monotonic,
+                    state[key],
+                    state["diff_realtime_monotonic"],
                     global_diff_realtime_monotonic,
                 )
-        for key, value in state.items():
-            if hasattr(self, key):
-                setattr(self, key, value)
+        self.__dict__.update(state)
 
     def encode_json(self) -> Dict[str, Any]:
         return self.__getstate__()
@@ -378,6 +351,7 @@ class ReqTimeStatsBase(msgspec.Struct, kw_only=True, tag=True):
         self.__setstate__(state)
 
 
+@dataclass
 class APIServerReqTimeStats(ReqTimeStatsBase):
     # get by time.perf_counter()
     created_time: float = 0.0
@@ -540,6 +514,7 @@ class APIServerReqTimeStats(ReqTimeStatsBase):
         return span_attrs
 
 
+@dataclass
 class DPControllerReqTimeStats(ReqTimeStatsBase):
     # propagated from tokenizer/grpc_server, get by time.perf_counter()
     created_time: float = 0.0
@@ -585,6 +560,7 @@ class DPControllerReqTimeStats(ReqTimeStatsBase):
             )
 
 
+@dataclass
 class SchedulerReqTimeStats(ReqTimeStatsBase):
     """
     Store the timestamps for each stage of a request.
@@ -1192,6 +1168,7 @@ class SchedulerReqTimeStats(ReqTimeStatsBase):
         return f"{convert_time_to_realtime(perf_counter_time):.3f}"
 
 
+@dataclass
 class EncoderReqTimeStats(ReqTimeStatsBase):
     mm_encode_start_time: float = 0.0
     mm_encode_end_time: float = 0.0

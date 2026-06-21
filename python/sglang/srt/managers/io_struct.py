@@ -41,12 +41,6 @@ from sglang.srt.lora.lora_registry import LoRARef
 from sglang.srt.managers.embed_types import PositionalEmbeds
 from sglang.srt.managers.schedule_batch import Modality
 from sglang.srt.multimodal.mm_utils import has_valid_data
-from sglang.srt.observability.req_time_stats import (
-    APIServerReqTimeStats,
-    DPControllerReqTimeStats,
-    MetricsCollectorWrapper,
-    SchedulerReqTimeStats,
-)
 from sglang.srt.observability.trace import (
     TraceContext,
     TraceSpan,
@@ -875,7 +869,7 @@ class TokenizedGenerateReqInput(BaseReq, kw_only=True):
     multi_item_delimiter_indices: Optional[List[int]] = None
 
     # For observability
-    time_stats: Optional[Union[APIServerReqTimeStats, DPControllerReqTimeStats]] = None
+    time_stats: Optional[PickleWrapper] = None  # Optional[Union[APIServerReqTimeStats, DPControllerReqTimeStats]]
 
 
 class BatchTokenizedGenerateReqInput(BaseBatchReq, kw_only=True):
@@ -1163,7 +1157,7 @@ class TokenizedEmbeddingReqInput(BaseReq, kw_only=True):
     multi_item_delimiter_indices: Optional[List[int]] = None
 
     # For observability
-    time_stats: Optional[Union[APIServerReqTimeStats, DPControllerReqTimeStats]] = None
+    time_stats: Optional[PickleWrapper] = None  # Optional[Union[APIServerReqTimeStats, DPControllerReqTimeStats]]
 
 
 class BatchTokenizedEmbeddingReqInput(BaseBatchReq, kw_only=True):
@@ -1254,7 +1248,7 @@ class BatchTokenIDOutput(BaseBatchReq, kw_only=True):
     dp_ranks: Optional[List[Optional[int]]] = None
 
     # For observability
-    time_stats: Optional[List[SchedulerReqTimeStats]] = None
+    time_stats: Optional[PickleWrapper] = None  # Optional[List[SchedulerReqTimeStats]]
 
     # Multimodal prompt token counts (image/audio/video). None when not applicable.
     image_tokens: Optional[List[int]] = None
@@ -1335,7 +1329,7 @@ class BatchStrOutput(BaseBatchReq, kw_only=True):
     dp_ranks: Optional[List[Optional[int]]] = None
 
     # For observability
-    time_stats: Optional[List[SchedulerReqTimeStats]] = None
+    time_stats: Optional[PickleWrapper] = None  # Optional[List[SchedulerReqTimeStats]]
 
     # Multimodal prompt token counts (image/audio/video). None when not applicable.
     image_tokens: Optional[List[int]] = None
@@ -1375,7 +1369,7 @@ class BatchEmbeddingOutput(BaseBatchReq, kw_only=True):
     cached_tokens_details: Optional[List[Optional[CachedTokensDetails]]] = None
 
     # For observability
-    time_stats: Optional[List[SchedulerReqTimeStats]] = None
+    time_stats: Optional[PickleWrapper] = None  # Optional[List[SchedulerReqTimeStats]]
 
     # Optional pooled hidden states (pre-head transformer output).
     # Sent as a single stacked tensor to minimize pickle overhead.
@@ -2231,10 +2225,6 @@ def enc_hook(obj: Any) -> Any:
         return (obj.typecode, obj.tobytes())
     elif isinstance(obj, np.floating):
         return float(obj)
-    elif isinstance(obj, MetricsCollectorWrapper):
-        # Metrics collectors are process-local handles and are reattached
-        # by the receiving process when metrics are enabled.
-        return None
     elif isinstance(obj, TraceSpan):
         # Live OpenTelemetry spans are process-local handles. Trace propagation
         # uses serializable span contexts instead.
