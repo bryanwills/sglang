@@ -170,6 +170,7 @@ MultimodalDataInputFormat = Union[
 FinishReasonDict = Dict[str, Optional[Union[str, int, List[int]]]]
 CachedTokensDetails = Dict[str, Union[int, str]]
 
+
 @dataclass
 class GenerateReqInput:
     # Request ID(s). If omitted, generated during normalization. For batch

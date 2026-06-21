@@ -105,6 +105,7 @@ class SocketMapping:
             self._register_ipc_mapping(ipc_name, is_tokenizer=is_tokenizer)
         sock_send(self._mapping[ipc_name], output)
 
+
 def _extract_field_by_index(
     output: Any, field_name: str, index: int, check_length: bool = True
 ) -> Any:
@@ -671,6 +672,7 @@ class TokenizerWorker(TokenizerManager):
         if self._pause_continue_future and not self._pause_continue_future.done():
             self._pause_continue_future.set_result(True)
             self._pause_continue_future = None
+
 
 async def print_exception_wrapper(func):
     """

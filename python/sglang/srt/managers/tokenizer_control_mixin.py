@@ -894,11 +894,7 @@ class TokenizerControlMixin:
 
 
 def _looks_like_pickle_payload(data: bytes) -> bool:
-    return (
-        len(data) >= 2
-        and data[0] == 0x80
-        and data[1] <= pickle.HIGHEST_PROTOCOL
-    )
+    return len(data) >= 2 and data[0] == 0x80 and data[1] <= pickle.HIGHEST_PROTOCOL
 
 
 def _decode_serialized_named_tensor_payload(data: Any) -> Any:

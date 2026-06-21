@@ -25,9 +25,7 @@ class TestUpdateWeightsFromTensorPayloadDecoding(CustomTestCase):
         )
 
         self.assertIsInstance(req.serialized_named_tensors[0], bytes)
-        decoded = _decode_serialized_named_tensor_payloads(
-            req.serialized_named_tensors
-        )
+        decoded = _decode_serialized_named_tensor_payloads(req.serialized_named_tensors)
 
         self.assertEqual(MultiprocessingSerializer.deserialize(decoded[0]), payload)
 

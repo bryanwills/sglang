@@ -235,9 +235,7 @@ class TestHttpMsgspecReqInput(CustomTestCase):
         operation = app.openapi()["paths"]["/parse_function_call"]["post"]
         self.assertIn("requestBody", operation)
         self.assertNotIn("parameters", operation)
-        openapi_schema = app.openapi()["components"]["schemas"][
-            "ParseFunctionCallReq"
-        ]
+        openapi_schema = app.openapi()["components"]["schemas"]["ParseFunctionCallReq"]
         self.assertIn("text", openapi_schema["properties"])
         self.assertIn("rid", openapi_schema["properties"])
         self.assertIn("http_worker_ipc", openapi_schema["properties"])
