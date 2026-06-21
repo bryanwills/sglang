@@ -213,8 +213,10 @@ class SchedulerOutputStreamer:
             all_have_phs = all(t is not None for t in phs_list)
             if all_have_phs:
                 if all(t.shape == phs_list[0].shape for t in phs_list):
-                    # when stack all tensors, to keep the pooled_hidden_states data type
-                    # wrap the tensor with list to avoid the msgpack issue
+                    # Wrap in a single-element list so the field stays
+                    # List[Tensor] for msgpack (bare Tensor is not supported).
+                    # The receiver checks is_pooled_hidden_states_stacked
+                    # and indexes [0] to recover the stacked tensor.
                     stacked_phs = [torch.stack(phs_list)]
                     is_pooled_hidden_states_stacked = True
                 else:

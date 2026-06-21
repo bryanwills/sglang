@@ -134,7 +134,6 @@ class SamplingParams(msgspec.Struct, kw_only=True):
         self.min_new_tokens = (
             self.min_new_tokens if self.min_new_tokens is not None else 0
         )
-        self.regex = self.regex
         self.n = self.n if self.n is not None else 1
         self.ignore_eos = self.ignore_eos if self.ignore_eos is not None else False
         self.skip_special_tokens = (
