@@ -55,6 +55,7 @@ from sglang.srt.managers.embed_types import PositionalEmbeds
 from sglang.srt.managers.io_struct import (
     AbortReq,
     ActiveRanksOutput,
+    BaseBatchReq,
     BaseReq,
     BatchEmbeddingOutput,
     BatchStrOutput,
@@ -3095,11 +3096,10 @@ class SignalHandler:
 
 
 def _attach_multi_http_worker_info(req: Any, tokenizer_ipc_name: str):
-    if hasattr(req, "http_worker_ipc"):
+    if isinstance(req, (GenerateReqInput, EmbeddingReqInput, BaseReq)):
         req.http_worker_ipc = tokenizer_ipc_name
-    elif hasattr(req, "http_worker_ipcs"):
-        rids = getattr(req, "rids", None)
-        req_len = len(rids) if rids is not None else len(req)
+    elif isinstance(req, BaseBatchReq):
+        req_len = len(req.rids) if req.rids is not None else len(req)
         req.http_worker_ipcs = [tokenizer_ipc_name] * req_len
     else:
         raise ValueError(f"Unknown req type: {type(req)}")

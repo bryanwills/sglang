@@ -97,12 +97,20 @@ class TestIoStructMsgpack(CustomTestCase):
         self.assertEqual(rebuilt.np_scalar, 1.25)
         self.assertIsInstance(rebuilt.np_scalar, float)
 
-    def test_top_level_string_uses_native_msgpack(self):
+    def test_top_level_string_uses_pickle_wrapper(self):
         encoded = msgpack_encode("node-0")
         decoded_without_pickle_unwrap = _msgpack_decoder.decode(encoded)
 
-        self.assertEqual(decoded_without_pickle_unwrap, "node-0")
+        self.assertIsInstance(decoded_without_pickle_unwrap, PickleWrapper)
         self.assertEqual(msgpack_decode(encoded), "node-0")
+
+    def test_top_level_bytes_use_native_msgpack(self):
+        payload = b"node-0"
+        encoded = msgpack_encode(payload)
+        decoded_without_pickle_unwrap = _msgpack_decoder.decode(encoded)
+
+        self.assertEqual(decoded_without_pickle_unwrap, payload)
+        self.assertEqual(msgpack_decode(encoded), payload)
 
     def test_process_local_runtime_handles_are_dropped(self):
         if trace_module.opentelemetry_imported:

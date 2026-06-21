@@ -357,14 +357,17 @@ class ReqTimeStatsBase(msgspec.Struct, kw_only=True, tag=True):
             else:
                 state["trace_ctx"] = TraceNullContext()
 
-        for key in state.keys():
+        source_diff_realtime_monotonic = state["diff_realtime_monotonic"]
+        for key, value in list(state.items()):
             if key.endswith("time"):
                 state[key] = convert_time_cross_thread(
-                    state[key],
-                    state["diff_realtime_monotonic"],
+                    value,
+                    source_diff_realtime_monotonic,
                     global_diff_realtime_monotonic,
                 )
-        self.__dict__.update(state)
+        for key, value in state.items():
+            if hasattr(self, key):
+                setattr(self, key, value)
 
     def encode_json(self) -> Dict[str, Any]:
         return self.__getstate__()

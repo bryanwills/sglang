@@ -2304,7 +2304,10 @@ _struct_types = tuple(
     + [PickleWrapper]
 )
 # Primitive types that msgpack can serialize directly without PickleWrapper.
-_primitive_types = (int, float, bool, bytes, str)
+# Do not include str here: msgspec rejects a Union containing both str and bytes
+# as multiple str-like arms. Top-level strings use PickleWrapper; string fields
+# inside typed structs are still decoded by their struct schemas.
+_primitive_types = (int, float, bool, bytes)
 _all_types = _struct_types + _primitive_types
 
 _msgpack_encoder = msgspec.msgpack.Encoder(enc_hook=enc_hook)
