@@ -1,6 +1,7 @@
 import dataclasses
+import inspect
 import unittest
-from typing import Annotated, List
+from typing import Annotated, Any, List, get_args
 
 import msgspec
 from fastapi import Body, FastAPI
@@ -12,6 +13,7 @@ from sglang.test.test_utils import CustomTestCase, maybe_stub_sgl_kernel
 
 maybe_stub_sgl_kernel()
 
+from sglang.srt.managers import io_struct as io_struct_module  # noqa: E402
 from sglang.srt.managers.io_struct import (  # noqa: E402
     AbortReq,
     BaseReq,
@@ -23,6 +25,9 @@ from sglang.srt.managers.io_struct import (  # noqa: E402
     VertexGenerateReqInput,
     _msgpack_decoder,
     _msgpack_encoder,
+    _pickle_transport_types,
+    msgpack_decode,
+    msgpack_encode,
 )
 
 register_cpu_ci(est_time=5, suite="base-a-test-cpu")
@@ -40,6 +45,36 @@ class ToyReqInput(BaseReq, kw_only=True):
 
 
 class TestHttpMsgspecReqInput(CustomTestCase):
+    def test_any_typed_msgspec_structs_are_explicit_pickle_transport(self):
+        def annotation_contains_any(annotation):
+            return annotation is Any or any(
+                annotation_contains_any(arg) for arg in get_args(annotation)
+            )
+
+        any_typed_structs = {
+            cls
+            for _, cls in inspect.getmembers(io_struct_module, inspect.isclass)
+            if cls.__module__ == io_struct_module.__name__
+            and issubclass(cls, msgspec.Struct)
+            and any(
+                annotation_contains_any(field.type)
+                for field in msgspec.structs.fields(cls)
+            )
+        }
+
+        self.assertSetEqual(any_typed_structs, set(_pickle_transport_types))
+
+    def test_any_typed_msgspec_structs_round_trip_with_non_msgpack_payload(self):
+        obj = UpdateWeightFromDiskReqInput(
+            model_path="/tmp/model",
+            manifest={"non_msgpack_value": 1 + 2j},
+        )
+
+        decoded = msgpack_decode(msgpack_encode(obj))
+
+        self.assertIsInstance(decoded, UpdateWeightFromDiskReqInput)
+        self.assertEqual(decoded.manifest, {"non_msgpack_value": 1 + 2j})
+
     def test_pydantic_type_adapter_constructs_msgspec_struct(self):
         adapter = TypeAdapter(ToyReqInput)
 

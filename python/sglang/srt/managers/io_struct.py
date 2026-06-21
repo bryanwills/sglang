@@ -2304,6 +2304,19 @@ _struct_types = tuple(
 _primitive_types = (int, float, bool, bytes)
 _all_types = _struct_types + _primitive_types
 
+# Structs with intentionally loose Any-typed control/debug payloads.
+# Keep these on explicit pickle transport until their field schemas are tightened.
+_pickle_transport_types: tuple[Type[msgspec.Struct], ...] = (
+    UpdateWeightFromDiskReqInput,
+    GetInternalStateReqOutput,
+    SetInternalStateReq,
+    SetInternalStateReqOutput,
+    LoadLoRAAdapterFromTensorsReqInput,
+    SetInjectDumpMetadataReqInput,
+    DumperControlReqInput,
+    DumperControlReqOutput,
+)
+
 _msgpack_encoder = msgspec.msgpack.Encoder(enc_hook=enc_hook)
 _msgpack_decoder = msgspec.msgpack.Decoder(Union[_all_types], dec_hook=dec_hook)
 
@@ -2318,6 +2331,11 @@ def hook_custom_types(*new_types: Type):
 
 
 def _maybe_wrap_pickle(obj: Any) -> PickleWrapper:
+    if type(obj) in _pickle_transport_types:
+        if envs.SGLANG_LOG_PICKLE_IPC_OBJECTS.get():
+            logger.info(f"Object of type {type(obj)} is wrapped via PickleWrapper.")
+        return PickleWrapper(pickle.dumps(obj))
+
     # Registered IPC structs can be directly decoded by _msgpack_decoder.
     if isinstance(obj, msgspec.Struct) and type(obj) in _all_types:
         return obj
