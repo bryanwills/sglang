@@ -57,15 +57,14 @@ if TYPE_CHECKING:
 class EagerRunner(BaseRunner):
     def __init__(self, model_runner: ModelRunner) -> None:
         super().__init__(model_runner)
-        mr = model_runner
-        sa = mr.server_args
+        sa = model_runner.server_args
         # Built first so the cg runners coalesce onto its buffers via the shared
         # input pool; size to the largest tokens/req across modes the worker hits.
         num_tokens_per_bs = 1
-        if mr.spec_algorithm.is_speculative():
+        if model_runner.spec_algorithm.is_speculative():
             # speculative_adaptive can grow draft tokens at runtime; size to the max.
             num_draft_tokens = sa.max_speculative_num_draft_tokens or 1
-            if mr.is_draft_worker:
+            if model_runner.is_draft_worker:
                 num_tokens_per_bs = max(
                     sa.speculative_eagle_topk or 1,
                     num_draft_tokens,
@@ -77,8 +76,8 @@ class EagerRunner(BaseRunner):
                 )
             else:
                 num_tokens_per_bs = (
-                    mr.spec_algorithm.get_num_tokens_per_bs_for_target_verify(
-                        num_draft_tokens, mr.is_draft_worker
+                    model_runner.spec_algorithm.get_num_tokens_per_bs_for_target_verify(
+                        num_draft_tokens, model_runner.is_draft_worker
                     )
                 )
         else:
@@ -86,10 +85,10 @@ class EagerRunner(BaseRunner):
             if dllm_config is not None:
                 # dLLM runs block_size tokens/request (DLLM_EXTEND).
                 num_tokens_per_bs = dllm_config.block_size
-        max_bs = mr.max_running_requests
+        max_bs = model_runner.max_running_requests
         if (
-            mr.is_draft_worker
-            and mr.spec_algorithm.is_frozen_kv_mtp()
+            model_runner.is_draft_worker
+            and model_runner.spec_algorithm.is_frozen_kv_mtp()
             and sa.speculative_eagle_topk > 1
         ):
             # Frozen-KV MTP expands the draft batch by topk on the bs axis
@@ -104,7 +103,7 @@ class EagerRunner(BaseRunner):
         prefill_ceiling = (
             sa.max_prefill_buffer_tokens()
             if sa.chunked_prefill_size and sa.chunked_prefill_size > 0
-            else mr.max_total_num_tokens
+            else model_runner.max_total_num_tokens
         )
         max_num_token = max(prefill_ceiling, max_bs * num_tokens_per_bs)
         if require_mlp_sync(sa):
@@ -112,30 +111,30 @@ class EagerRunner(BaseRunner):
             max_num_token = ceil_align(max_num_token, get_cp_padding_align_size())
         self._eager_max_bs = max_bs
         self._eager_num_tokens_per_bs = num_tokens_per_bs
-        is_encoder_decoder = mr.model_config.is_encoder_decoder
+        is_encoder_decoder = model_runner.model_config.is_encoder_decoder
         self._eager_registry = build_eager_registry(
-            device=mr.device,
+            device=model_runner.device,
             max_bs=max_bs,
             max_num_token=max_num_token,
             cache_loc_dtype=torch.int64,
             enable_mamba_track=(
-                sa.enable_mamba_extra_buffer() and mr.spec_algorithm.is_none()
+                sa.enable_mamba_extra_buffer() and model_runner.spec_algorithm.is_none()
             ),
             is_encoder_decoder=is_encoder_decoder,
             encoder_len_fill_value=(
-                getattr(mr.model_config.hf_config, "max_source_positions", 0)
+                getattr(model_runner.model_config.hf_config, "max_source_positions", 0)
                 if is_encoder_decoder
                 else 0
             ),
             dp_size=sa.dp_size,
         )
-        # Eager has no capture step, so warm up here (run-once via mr._kernel_warmed_up).
+        # Eager has no capture step, so warm up here (run-once via model_runner._kernel_warmed_up).
         self.warmup()
 
     def _autotune_buffers(self) -> Tuple[Any, int]:
         """Adapter over the eager registry for the autotune dummy forward; fills
         in fields the registry omits (logits buffer, pp_proxy, custom_mask)."""
-        mr = self.model_runner
+        model_runner = self.model_runner
         reg = self._eager_registry
         max_bs = self._eager_max_bs
 
@@ -146,28 +145,34 @@ class EagerRunner(BaseRunner):
         # eager registry (build_eager_registry passes enable_num_token_non_padded
         # =False, register_global_num_tokens=False); _dummy_run writes + reads
         # them unconditionally, so supply tiny fresh tensors here.
-        num_token_non_padded = torch.zeros((1,), dtype=torch.int32, device=mr.device)
+        num_token_non_padded = torch.zeros(
+            (1,), dtype=torch.int32, device=model_runner.device
+        )
         global_dim = (
-            mr.server_args.dp_size if require_mlp_tp_gather(mr.server_args) else 1
+            model_runner.server_args.dp_size
+            if require_mlp_tp_gather(model_runner.server_args)
+            else 1
         )
         global_num_tokens_gpu = torch.zeros(
-            (global_dim,), dtype=torch.int32, device=mr.device
+            (global_dim,), dtype=torch.int32, device=model_runner.device
         )
         global_num_tokens_for_logprob_gpu = torch.zeros(
-            (global_dim,), dtype=torch.int32, device=mr.device
+            (global_dim,), dtype=torch.int32, device=model_runner.device
         )
 
         # custom_mask: only consumed by create_dummy_verify_input (spec). Size it
         # like the decode path's custom_mask for a spec target worker.
         custom_mask: Optional[torch.Tensor] = None
-        if mr.spec_algorithm.is_speculative():
+        if model_runner.spec_algorithm.is_speculative():
             num_tokens_per_bs = self._eager_num_tokens_per_bs
             max_num_token = reg.max_num_tokens
-            seq_len_fill_value = mr.attn_backend.get_cuda_graph_seq_len_fill_value()
+            seq_len_fill_value = (
+                model_runner.attn_backend.get_cuda_graph_seq_len_fill_value()
+            )
             custom_mask = torch.ones(
                 (max_bs * seq_len_fill_value + max_num_token) * num_tokens_per_bs,
                 dtype=torch.bool,
-                device=mr.device,
+                device=model_runner.device,
             )
 
         # pp_proxy_tensors: only read when pp_size>1. _dummy_run slices each value
@@ -175,25 +180,29 @@ class EagerRunner(BaseRunner):
         # dim to the registry's token ceiling. Mirror _allocate_decode_buffers'
         # keys/dtypes (mHC flattens residual into hidden_states of hc_hidden_size).
         pp_proxy_tensors = None
-        if mr.server_args.pp_size > 1:
-            hidden_size = mr.model_config.hidden_size
-            hc_hidden_size = getattr(mr.model_config, "hc_hidden_size", None)
+        if model_runner.server_args.pp_size > 1:
+            hidden_size = model_runner.model_config.hidden_size
+            hc_hidden_size = getattr(model_runner.model_config, "hc_hidden_size", None)
             is_mhc = hc_hidden_size is not None
             hs = hc_hidden_size if is_mhc else hidden_size
             rows = reg.max_num_tokens
             pp_proxy_tensors = {
                 "hidden_states": torch.zeros(
-                    (rows, hs), dtype=mr.dtype, device=mr.device
+                    (rows, hs), dtype=model_runner.dtype, device=model_runner.device
                 ),
             }
             if not is_mhc:
                 pp_proxy_tensors["residual"] = torch.zeros(
-                    (rows, hidden_size), dtype=mr.dtype, device=mr.device
+                    (rows, hidden_size),
+                    dtype=model_runner.dtype,
+                    device=model_runner.device,
                 )
-            pp_proxy_topk_size = mr.get_pp_proxy_topk_size()
+            pp_proxy_topk_size = model_runner.get_pp_proxy_topk_size()
             if pp_proxy_topk_size is not None:
                 pp_proxy_tensors["topk_indices"] = torch.zeros(
-                    (rows, pp_proxy_topk_size), dtype=torch.int32, device=mr.device
+                    (rows, pp_proxy_topk_size),
+                    dtype=torch.int32,
+                    device=model_runner.device,
                 )
 
         adapter = SimpleNamespace(
